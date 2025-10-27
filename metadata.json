@@ -1,0 +1,5 @@
+{
+  "name": "Waj Scribe",
+  "description": "An application to transcribe audio files of sermons (Waj) into text using the Gemini API.",
+  "requestFramePermissions": []
+}
