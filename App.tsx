@@ -1,18 +1,17 @@
-import React, { useState, useRef } from 'react';
-import { GoogleGenAI } from '@google/genai';
-import { fileToGenerativePart } from './utils/audioUtils';
+import React, { useState } from 'react';
 import { WajScribeLogo } from './components/icons/WajScribeLogo';
-import { HomeIcon } from './components/icons/HomeIcon';
 import { SpeechToTextIcon } from './components/icons/SpeechToTextIcon';
 import { HistoryIcon } from './components/icons/HistoryIcon';
 import { LogoutIcon } from './components/icons/LogoutIcon';
 import { LoginView } from './components/LoginView';
 import { HistoryView } from './components/HistoryView';
-import { UploadIcon } from './components/icons/UploadIcon';
-import { FileAudioIcon } from './components/icons/FileAudioIcon';
-import { ClipboardIcon } from './components/icons/ClipboardIcon';
+import { TranscriberView } from './components/TranscriberView';
+import { LiveView } from './components/LiveView';
+import { LiveIcon } from './components/icons/LiveIcon';
+import { MenuIcon } from './components/icons/MenuIcon';
 import type { User, HistoryItem } from './types';
 
+// System instruction for file-based transcription
 const systemInstruction = `তুমি একজন দক্ষ ইসলামিক অডিও ট্রান্সক্রিপশন সহকারী, যিনি বাংলা ও আরবি ভাষা খুব ভালোভাবে বোঝে। তোমার কাজ হলো ওয়াজ, খুতবা, ইসলামিক বক্তৃতা ইত্যাদি অডিও শুনে একেবারে শুরু থেকে শেষ পর্যন্ত হুবহু লিখিত টেক্সটে রূপান্তর করা।
 
 🔹 প্রধান নির্দেশনা:
@@ -40,17 +39,17 @@ const systemInstruction = `তুমি একজন দক্ষ ইসলা�
 - খাস → খাছ
 - সাইয়্যেদুশ শূহূর শা'আযম → সাইয়্যিদুশ শুহূর শাহরুল ‘আযম
 - মোবারকের → মুবারকের
-- সাইয়্যিদুল আদশ শরীফ → সাইয়্যিদুল আ’দাদ শরীফ
-- সাইয়্যেদুশ → সাইয়্যিদুশ
+- সাইয়্যিদুল আদש শরীফ → সাইয়্যিদুল আ’দাদ শরীফ
+- সাইয়্যেদুশ → সাইয়্যিদুש
 - শূহূর → শুহূর
-- সাইয়্যিদুল আদশ → সাইয়্যিদুল আ’দাদ
+- সাইয়্যিদুল আদש → সাইয়্যিদুল আ’দাদ
 - নিযবত → নিছবত
-- উম্মুল মু'মিনীন আস-সালিহা সিদ্দীক্বাহ → উম্মুল মু'মিনীন আস-ছালিছা ছিদ্দীক্বাহ
+- উম্মুল মু'মিনীন আস-সালিহা সিদ্দীক্বাহ → উম্মুল মু’মিনীন আস-ছালিছা ছিদ্দীক্বাহ
 - খাতামুল → খ্বতামুল
 - আহ্লিয়া → আহলিয়া
 - ইছনাইন আযীম → ইছনাইনিল আযীম
 - রোগ শোথ → রোখসত
-- নূরের তাশরীফ → নূরুত তাশরীফ
+- নূরের তাשরীফ → নূরুত তাשরীফ
 - সলাত → ছলাত
 - নবী-রাসূল আলাইহিস সালাম → নবী-রাসূল আলাইহিমুস সালাম
 - আর্দালি → আরদালি
@@ -66,12 +65,12 @@ const systemInstruction = `তুমি একজন দক্ষ ইসলা�
 রাসূলুল্লাহ (ছল্লাল্লাহু আলাইহি ওয়া সাল্লাম) বলেছেন, “ছলাত ইসলাম ধর্মের স্তম্ভ।”
 ---`;
 
-type View = 'speechToText' | 'history';
+type View = 'speechToText' | 'live' | 'history';
 
 const NavItem: React.FC<{ icon: React.ReactNode; label: string; active?: boolean; onClick?: () => void; }> = ({ icon, label, active, onClick }) => (
   <button onClick={onClick} className={`flex items-center w-full px-4 py-2.5 text-sm font-medium rounded-lg transition-colors duration-200 text-left ${
       active
-        ? 'bg-violet-100 text-violet-700'
+        ? 'bg-emerald-100 text-emerald-700'
         : 'text-slate-600 hover:bg-slate-100'
     }`}
   >
@@ -80,183 +79,13 @@ const NavItem: React.FC<{ icon: React.ReactNode; label: string; active?: boolean
   </button>
 );
 
-const TranscriberView: React.FC<{ onTranscriptionComplete: (item: HistoryItem) => void }> = ({ onTranscriptionComplete }) => {
-  const [file, setFile] = useState<File | null>(null);
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [transcription, setTranscription] = useState<string>('');
-  const [error, setError] = useState<string>('');
-  const [copySuccess, setCopySuccess] = useState<boolean>(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleFileChange = (selectedFile: File | undefined) => {
-    if (selectedFile) {
-      if (selectedFile.size > 20 * 1024 * 1024) { // 20 MB limit
-        setError('File is too large. Please upload an audio file under 20MB.');
-        setFile(null);
-      } else {
-        setFile(selectedFile);
-        setError('');
-        setTranscription('');
-      }
-    }
-  };
-
-  const handleTranscribe = async () => {
-    if (!file) {
-      setError('Please select a file first.');
-      return;
-    }
-
-    setIsProcessing(true);
-    setError('');
-    setTranscription('');
-    setCopySuccess(false);
-
-    try {
-      const audioPart = await fileToGenerativePart(file);
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: { parts: [audioPart] },
-        config: {
-          systemInstruction: systemInstruction
-        }
-      });
-
-      const text = response.text;
-      setTranscription(text);
-
-      const newHistoryItem: HistoryItem = {
-        id: new Date().toISOString(),
-        fileName: file.name,
-        transcription: text,
-        date: new Date().toLocaleString()
-      };
-      onTranscriptionComplete(newHistoryItem);
-
-    } catch (e) {
-      console.error(e);
-      setError('An error occurred during transcription. Please try again.');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-  
-  const handleCopy = () => {
-    navigator.clipboard.writeText(transcription).then(() => {
-        setCopySuccess(true);
-        setTimeout(() => setCopySuccess(false), 2000);
-    });
-  };
-
-  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const droppedFile = event.dataTransfer.files?.[0];
-    if (droppedFile && droppedFile.type.startsWith('audio/')) {
-        handleFileChange(droppedFile);
-    } else {
-        setError('Invalid file type. Please drop an audio file.');
-    }
-  };
-  
-  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-  };
-
-  return (
-    <div className="max-w-4xl mx-auto">
-      <div className="mb-10">
-        <h2 className="text-3xl font-bold text-slate-900">Hello there! 👋</h2>
-        <p className="text-slate-500 mt-1">Ready to transcribe? Upload your audio file to get started.</p>
-      </div>
-      
-      <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
-        <div 
-          className="border-2 border-dashed border-slate-300 rounded-lg p-10 text-center cursor-pointer hover:border-violet-500 hover:bg-violet-50 transition-all duration-300"
-          onClick={() => fileInputRef.current?.click()}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-        >
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={(e) => handleFileChange(e.target.files?.[0])}
-            accept="audio/*"
-            className="hidden"
-          />
-          <div className="flex flex-col items-center text-slate-500">
-              <div className="flex items-center justify-center w-16 h-16 bg-slate-100 rounded-full mb-4">
-                <UploadIcon className="w-8 h-8 text-slate-500" />
-              </div>
-              <p className="font-semibold">Drag & drop your file here</p>
-              <p className="text-sm">or <span className="text-violet-600 font-medium">click to browse</span></p>
-              <p className="text-xs mt-2 text-slate-400">Maximum file size: 20MB</p>
-          </div>
-        </div>
-        
-        {file && (
-          <div className="mt-6 p-4 bg-slate-100 rounded-lg flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <FileAudioIcon className="w-5 h-5 text-violet-600" />
-              <span className="font-medium text-slate-700 text-sm">{file.name}</span>
-              <span className="text-xs text-slate-500">({(file.size / 1024 / 1024).toFixed(2)} MB)</span>
-            </div>
-            <button onClick={() => setFile(null)} className="text-red-500 hover:text-red-700 font-semibold text-xs">Remove</button>
-          </div>
-        )}
-
-        {error && <p className="text-red-500 text-center mt-4 text-sm">{error}</p>}
-        
-        <div className="mt-8 text-center">
-          <button
-            onClick={handleTranscribe}
-            disabled={!file || isProcessing}
-            className="w-full sm:w-auto px-12 py-3 bg-violet-600 text-white font-semibold rounded-lg shadow-md hover:bg-violet-700 disabled:bg-slate-400 disabled:cursor-not-allowed transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-violet-300"
-          >
-            {isProcessing ? (
-              <div className="flex items-center justify-center">
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  <span>Processing...</span>
-              </div>
-            ) : (
-              'Transcribe Audio'
-            )}
-          </button>
-        </div>
-      </div>
-
-      {transcription && (
-        <div className="mt-8 bg-white p-8 rounded-2xl shadow-sm border border-slate-200">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-slate-700">Transcription Result</h2>
-            <button onClick={handleCopy} className="flex items-center px-3 py-1.5 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-400">
-                <ClipboardIcon className="w-4 h-4 mr-2" />
-                {copySuccess ? 'Copied!' : 'Copy'}
-            </button>
-          </div>
-          <div className="prose prose-sm max-w-none bg-slate-50 p-4 rounded-lg whitespace-pre-wrap text-slate-800 border border-slate-200" style={{ fontFamily: 'Kalpurush, Arial, sans-serif' }}>
-            {transcription}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeView, setActiveView] = useState<View>('speechToText');
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const handleLogin = () => {
-    // This is a mock login. In a real app, you'd use an OAuth flow.
     setCurrentUser({
       name: 'Nayeem',
       email: 'nayeem@example.com',
@@ -274,56 +103,80 @@ const App: React.FC = () => {
     setHistory(prev => [item, ...prev]);
   };
 
+  const handleViewChange = (view: View) => {
+    setActiveView(view);
+    setIsSidebarOpen(false); // Close sidebar on navigation on mobile
+  }
+
   if (!currentUser) {
     return <LoginView onLogin={handleLogin} />;
   }
 
   const viewTitles: Record<View, string> = {
-    speechToText: 'Speech to Text',
+    speechToText: 'Transcribe File',
+    live: 'Live Transcription',
     history: 'Transcription History'
   };
 
+  const SidebarContent = () => (
+    <>
+      <div className="flex items-center justify-center h-20 border-b border-slate-200">
+        <WajScribeLogo className="w-8 h-8 text-emerald-600" />
+        <span className="ml-2 text-xl font-bold text-slate-800">Waj Scribe</span>
+      </div>
+      <nav className="flex-1 px-4 py-6 space-y-2">
+        <NavItem icon={<SpeechToTextIcon />} label="Transcribe File" onClick={() => handleViewChange('speechToText')} active={activeView === 'speechToText'} />
+        <NavItem icon={<LiveIcon />} label="Live Transcription" onClick={() => handleViewChange('live')} active={activeView === 'live'} />
+        <NavItem icon={<HistoryIcon />} label="History" onClick={() => handleViewChange('history')} active={activeView === 'history'} />
+      </nav>
+      <div className="px-4 py-6 border-t border-slate-200">
+        <div className="flex items-center space-x-3 mb-4">
+          <img src={currentUser.avatar} alt="User Avatar" className="w-10 h-10 rounded-full" />
+          <div>
+              <p className="font-semibold text-sm text-slate-800">{currentUser.name}</p>
+              <p className="text-xs text-slate-500">{currentUser.email}</p>
+          </div>
+        </div>
+        <button onClick={handleLogout} className={`flex items-center w-full px-4 py-2.5 text-sm font-medium rounded-lg transition-colors duration-200 text-left text-slate-600 hover:bg-slate-100`}>
+            <LogoutIcon />
+            <span className="ml-3">Log out</span>
+        </button>
+      </div>
+    </>
+  );
+
   return (
     <div className="flex h-screen bg-slate-50 text-slate-800 font-sans">
-      {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
-        <div className="flex items-center justify-center h-20 border-b border-slate-200">
-          <WajScribeLogo className="w-8 h-8 text-violet-600" />
-          <span className="ml-2 text-xl font-bold text-slate-800">Waj Scribe</span>
-        </div>
-        <nav className="flex-1 px-4 py-6 space-y-2">
-          <NavItem icon={<HomeIcon />} label="Home" onClick={() => setActiveView('speechToText')} active={activeView === 'speechToText'} />
-          <NavItem icon={<SpeechToTextIcon />} label="Speech to Text" onClick={() => setActiveView('speechToText')} active={activeView === 'speechToText'} />
-          <NavItem icon={<HistoryIcon />} label="History" onClick={() => setActiveView('history')} active={activeView === 'history'} />
-        </nav>
-        <div className="px-4 py-6 border-t border-slate-200">
-          <div className="flex items-center space-x-3 mb-4">
-            <img src={currentUser.avatar} alt="User Avatar" className="w-10 h-10 rounded-full" />
-            <div>
-                <p className="font-semibold text-sm text-slate-800">{currentUser.name}</p>
-                <p className="text-xs text-slate-500">{currentUser.email}</p>
-            </div>
-          </div>
-          <button onClick={handleLogout} className={`flex items-center w-full px-4 py-2.5 text-sm font-medium rounded-lg transition-colors duration-200 text-left text-slate-600 hover:bg-slate-100`}>
-              <LogoutIcon />
-              <span className="ml-3">Log out</span>
-          </button>
-        </div>
+      {/* Mobile Sidebar */}
+      <div className={`fixed inset-0 z-30 transition-opacity duration-300 lg:hidden ${isSidebarOpen ? 'bg-black/30' : 'bg-transparent pointer-events-none'}`} onClick={() => setIsSidebarOpen(false)}></div>
+      <aside className={`fixed top-0 left-0 z-40 w-64 h-full bg-white border-r border-slate-200 flex flex-col transition-transform duration-300 lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <SidebarContent />
+      </aside>
+      
+      {/* Desktop Sidebar */}
+      <aside className="w-64 bg-white border-r border-slate-200 flex-col flex-shrink-0 hidden lg:flex">
+        <SidebarContent />
       </aside>
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        <header className="flex items-center justify-between h-20 px-8 border-b border-slate-200 bg-white flex-shrink-0">
-          <h1 className="text-2xl font-bold text-slate-900">{viewTitles[activeView]}</h1>
+        <header className="flex items-center justify-between h-20 px-4 sm:px-8 border-b border-slate-200 bg-white flex-shrink-0">
+          <div className="flex items-center">
+            <button className="lg:hidden mr-4 text-slate-600" onClick={() => setIsSidebarOpen(true)}>
+                <MenuIcon />
+            </button>
+            <h1 className="text-2xl font-bold text-slate-900">{viewTitles[activeView]}</h1>
+          </div>
           <div>
-            <button className="px-4 py-2 text-sm font-semibold text-white bg-violet-600 rounded-lg shadow-md hover:bg-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-opacity-50">
+            <button className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg shadow-md hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-opacity-50">
               Try With API
             </button>
           </div>
         </header>
 
-        <div className="flex-1 p-8 overflow-y-auto">
-          {activeView === 'speechToText' && <TranscriberView onTranscriptionComplete={handleTranscriptionComplete} />}
+        <div className="flex-1 p-4 sm:p-8 overflow-y-auto">
+          {activeView === 'speechToText' && <TranscriberView onTranscriptionComplete={handleTranscriptionComplete} systemInstruction={systemInstruction} />}
+          {activeView === 'live' && <LiveView />}
           {activeView === 'history' && <HistoryView history={history} />}
         </div>
       </main>

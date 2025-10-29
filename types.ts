@@ -10,3 +10,8 @@ export interface HistoryItem {
   transcription: string;
   date: string;
 }
+
+export interface Transcript {
+  speaker: 'user' | 'model';
+  text: string;
+}

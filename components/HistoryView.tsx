@@ -33,7 +33,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({ history }) => {
           <div className="flex justify-between items-start mb-4">
             <div>
               <div className="flex items-center space-x-3 mb-1">
-                <FileAudioIcon className="w-5 h-5 text-violet-600 flex-shrink-0" />
+                <FileAudioIcon className="w-5 h-5 text-emerald-600 flex-shrink-0" />
                 <h3 className="font-semibold text-slate-800">{item.fileName}</h3>
               </div>
               <p className="text-xs text-slate-500 ml-8">{item.date}</p>
