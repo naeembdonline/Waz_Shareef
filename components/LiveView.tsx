@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useLiveConversation } from '../hooks/useLiveConversation';
 import { MicrophoneIcon } from './icons/MicrophoneIcon';
 import { StopIcon } from './icons/StopIcon';
 import { WajScribeLogo } from './icons/WajScribeLogo';
 import type { Transcript } from '../types';
+import { ClipboardIcon } from './icons/ClipboardIcon';
 
 export const LiveView: React.FC = () => {
     const {
@@ -18,11 +19,33 @@ export const LiveView: React.FC = () => {
 
     const TranscriptItem: React.FC<{ speaker: 'user' | 'model'; text: string }> = ({ speaker, text }) => {
         const isUser = speaker === 'user';
+        const [copied, setCopied] = useState(false);
+
+        const handleCopy = () => {
+            navigator.clipboard.writeText(text).then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            });
+        };
+
         return (
-            <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
-                <div className={`max-w-lg p-3 rounded-lg ${isUser ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-800'}`}>
+            <div className={`flex items-center gap-2 group ${isUser ? 'justify-end flex-row-reverse' : 'justify-start'} mb-4`}>
+                 <div className={`max-w-lg p-3 rounded-lg ${isUser ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-800'}`}>
                     <p className="text-sm">{text}</p>
                 </div>
+                <button 
+                    onClick={handleCopy} 
+                    className="p-1.5 rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Copy text"
+                >
+                    {copied ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                           <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                    ) : (
+                        <ClipboardIcon className="w-4 h-4" />
+                    )}
+                </button>
             </div>
         );
     };
